@@ -217,19 +217,6 @@ def check_netflix_cookie(cookie_dict):
     except:
         return {'ok': False, 'reason': 'Error'}
 
-# ----------------- ॲनिमेशन आणि लोडर -----------------
-BRAILLE_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-
-async def animate_progress(message, current, total):
-    percent = int((current / max(total, 1)) * 100)
-    filled = int(percent / 10)
-    bar = "█" * filled + "▒" * (10 - filled)
-    frame = BRAILLE_FRAMES[current % len(BRAILLE_FRAMES)]
-    try:
-        await message.text = f"{frame} <b>Processing Cookies...</b>\n\n[{bar}] {percent}%\n📊 Checked: {current}/{total}"
-    except:
-        pass
-
 # ----------------- टेलिग्राम हँडलर्स -----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id

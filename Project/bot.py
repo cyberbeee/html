@@ -31,9 +31,9 @@ from flask import Flask
 
 # ----------------- कॉन्फिगरेशन -----------------
 TOKEN = os.environ.get('BOT_TOKEN', "Bot Token Here")
-OWNER_ID = 6177293322
-ADMIN_IDS = [6177293322]  # आवश्यक असल्यास तुमचा ॲडमिन आयडी इथे टाका
-WATERMARK = "Made By @SajagOG | @KindCoders"
+OWNER_ID = 1115202962
+ADMIN_IDS = [1115202962]  # आवश्यक असल्यास तुमचा ॲडमिन आयडी इथे टाका
+WATERMARK = "Made By @ShinchanNoharaTG | @M3UIndiaOriginal"
 
 MAX_WORKERS = 20
 BATCH_SIZE = 10

@@ -98,7 +98,7 @@ def run_http_server():
     with socketserver.TCPServer(("", PORT), PingHandler) as httpd:
         httpd.serve_forever()
 
-# ----------------- पार्सिंग आणि क्लिनिंग फंक्शन्स (जुना अचूक रेगुलर एक्स्प्रेशन कोड) -----------------
+# ----------------- क्लिनिंग आणि पार्सिंग फंक्शन्स -----------------
 def safe_filename(name):
     return re.sub(r'[^a-zA-Z0-9_\-\.]', '_', name)
 
@@ -118,8 +118,8 @@ def dict_to_netscape(cookie_dict, domain=".netflix.com"):
         lines.append(f"{domain}\tTRUE\t/\tFALSE\t{expiry}\t{k}\t{v}")
     return "\n".join(lines)
 
-# तुमच्या जुन्या स्क्रिप्टमधील Netscape Cookie Regex पॅटर्न
-COOKIE_PATTERN = re.compile(
+# तुम्ही सांगितलेला हुबेहूब जुना Netscape Regex पॅटर्न
+cookie_pattern = re.compile(
     r'([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\s+'
     r'(TRUE|FALSE)\s+'
     r'([^\s]+)\s+'
@@ -129,24 +129,16 @@ COOKIE_PATTERN = re.compile(
     r'([^\s]*)'
 )
 
-def clean_cookies_content(content):
-    matches = COOKIE_PATTERN.findall(content)
-    if matches:
-        formatted_lines = ["\t".join(match) for match in matches]
-        return "\n".join(formatted_lines) + "\n"
-    return None
-
 def parse_cookie_file(text):
     text = text.strip()
     results = []
     
-    # आधी जुन्या Regex नुसार नेटस्केप कुकीज शोधूया
-    matches = COOKIE_PATTERN.findall(text)
+    matches = cookie_pattern.findall(text)
     if matches:
         cookie_dict = {}
         for m in matches:
             domain, flag1, path, flag2, expiry, name, value = m
-            if name in ALL_COOKIE_NAMES:
+            if name in ALL_COOKIE_NAMES or "netflix" in domain.lower():
                 cookie_dict[name] = value
         if cookie_dict.get('NetflixId'):
             results.append(("netscape_regex", cookie_dict))
@@ -255,22 +247,25 @@ async def file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open(tp, "r", encoding="utf-8", errors="ignore") as f:
             content = f.read()
 
-        # जर Clean Cookies मोड असेल तर जुन्या लॉजिकनुसार क्लिन करून फाईल पाठवा
+        # Clean Cookies लॉजिक (तुमच्या जुन्या कोडनुसार)
         if mode == "clean":
-            cleaned_text = clean_cookies_content(content)
-            if cleaned_text:
-                buf = io.BytesIO(cleaned_text.encode("utf-8"))
+            matches = cookie_pattern.findall(content)
+            if matches:
+                formatted_lines = ["\t".join(match) for match in matches]
+                cleaned_content = "\n".join(formatted_lines) + "\n"
+                
+                buf = io.BytesIO(cleaned_content.encode("utf-8"))
                 buf.seek(0)
                 await update.message.reply_document(
                     document=InputFile(buf, filename=f"cleaned_{update.message.document.file_name}"),
-                    caption="🧹 <b>Here is your cleanly formatted cookie file!</b>\n" + WATERMARK,
+                    caption=f"🧹 Cleaned: {update.message.document.file_name} ({len(matches)} cookies formatted)\n" + WATERMARK,
                     parse_mode='HTML'
                 )
             else:
-                await update.message.reply_text("❌ No matching Netscape cookies found to clean in this file!")
+                await update.message.reply_text(f"❌ No matching Netscape cookies found to clean in this file!")
             return
 
-        # इतर मोड्ससाठी (Check / Token)
+        # इतर मोड्ससाठी
         if filename.endswith('.zip') or filename.endswith('.rar'):
             cookies = await extract_cookies_from_zip(tp)
         else:

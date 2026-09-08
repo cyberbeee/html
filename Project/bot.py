@@ -405,7 +405,7 @@ async def start_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_state[user_id]['valid_hits'] = valid_hits
     
     result_text = (
-        f"🎉 <b>CHECKING COMPLETED!</b> 🎉\n\n"
+        f"🎉 <b>COOKIES SCAN COMPLETED!</b> 🎉\n\n"
         f"💯 Total Tested: <b>{total}</b>\n"
         f"🏆 Subscription Found: <b>{sub_found}</b> 🔥\n"
         f"🆓 Free Accounts: <b>{free}</b>\n"

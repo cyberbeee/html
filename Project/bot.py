@@ -1118,7 +1118,7 @@ if __name__ == "__main__":
     app.add_handler(CallbackQueryHandler(start_check, pattern="^start_check$"))
     app.add_handler(CallbackQueryHandler(stop_check, pattern="^stop_check$"))
     app.add_handler(CallbackQueryHandler(get_hits, pattern="^get_hits$"))
-    app.add_handler(CallbackQueryHandler(result_txt, pattern="^result_txt$")) # keep or map below
+    app.add_handler(CallbackQueryHandler(send_result_txt, pattern="^result_txt$"))
     app.add_handler(CallbackQueryHandler(send_result_zip, pattern="^result_zip$"))
     
     app.add_handler(MessageHandler(filters.Document.ALL & ~filters.COMMAND, file_upload))

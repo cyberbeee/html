@@ -5,6 +5,7 @@ import logging
 import requests
 import io
 import zipfile
+import pyzipper
 import hashlib
 import tempfile
 import time
@@ -31,7 +32,7 @@ import urllib.parse
 TOKEN = os.environ.get('BOT_TOKEN', "Bot Token Here")
 OWNER_ID = 1115202962
 ADMIN_IDS = [1115202962]
-WATERMARK = "Made By @ShinchanNoharaTG | @M3UIndiaOriginal"
+WATERMARK = "✨ Powered By @ShinchanNoharaTG | @M3UIndiaOriginal ✨"
 
 MAX_WORKERS = 15
 COOKIES_DIR = "vault"
@@ -48,10 +49,12 @@ user_state = {}
 
 START_MSG = (
     "<code>\n"
-    " █ NETFLIX MULTI-TOOL BOT █\n\n"
-    "[ Step 1 ] Choose mode below\n"
-    "[ Step 2 ] Upload .txt/.json/.zip file\n"
-    "[ Step 3 ] Get results\n"
+    " 🌟 ────────────────────── 🌟\n"
+    "    🔥 NETFLIX MULTI-TOOL BOT 🔥\n"
+    " 🌟 ────────────────────── 🌟\n\n"
+    " [ 1️⃣ ] Choose your mode below 👇\n"
+    " [ 2️⃣ ] Upload .txt / .json / .zip / .rar 📁\n"
+    " [ 3️⃣ ] Get instant premium results! 🚀\n"
     "</code>"
 )
 
@@ -63,12 +66,12 @@ MAIN_MARKUP = InlineKeyboardMarkup([
 ])
 
 CHECK_MARKUP = InlineKeyboardMarkup([
-    [InlineKeyboardButton("▶️ Start Checking", callback_data="start_check")]
+    [InlineKeyboardButton("🚀 Start Checking Now", callback_data="start_check")]
 ])
 
 RESULT_MARKUP = InlineKeyboardMarkup([
     [InlineKeyboardButton("📄 Get as .txt", callback_data="result_txt"),
-     InlineKeyboardButton("📦 Get as .zip", callback_data="result_zip")]
+     InlineKeyboardButton("📦 Get Categorized .zip", callback_data="result_zip")]
 ])
 
 logging.basicConfig(level=logging.INFO)
@@ -79,7 +82,7 @@ class PingHandler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self): 
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Server Active")
+        self.wfile.write(b"Server Active 24x7")
     def log_message(self, format, *args):
         return
 
@@ -118,7 +121,6 @@ def dict_to_netscape(cookie_dict, domain=".netflix.com"):
         lines.append(f"{domain}\tTRUE\t/\tFALSE\t{expiry}\t{k}\t{v}")
     return "\n".join(lines)
 
-# तुम्ही सांगितलेला हुबेहूब जुना Netscape Regex पॅटर्न
 cookie_pattern = re.compile(
     r'([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\s+'
     r'(TRUE|FALSE)\s+'
@@ -159,21 +161,26 @@ def parse_cookie_file(text):
 
     return results
 
-async def extract_cookies_from_zip(zip_path):
+async def extract_cookies_from_archive(archive_path, password=None):
     cookies = []
-    with zipfile.ZipFile(zip_path, 'r') as z:
-        for info in z.infolist():
-            if info.is_dir() or info.filename.startswith('__MACOSX'):
-                continue
-            if info.filename.lower().endswith(('.txt', '.json', '.rar', '.zip')):
-                with z.open(info) as f:
-                    try:
-                        content = f.read().decode('utf-8', errors='ignore')
-                        c = parse_cookie_file(content)
-                        for idx, (blockname, cc) in enumerate(c):
-                            cookies.append((f"{safe_filename(info.filename)}_{idx}", cc))
-                    except:
-                        continue
+    try:
+        with pyzipper.AESZipFile(archive_path, 'r') as z:
+            if password:
+                z.setpassword(password.encode('utf-8'))
+            for info in z.infolist():
+                if info.is_dir() or info.filename.startswith('__MACOSX'):
+                    continue
+                if info.filename.lower().endswith(('.txt', '.json')):
+                    with z.open(info) as f:
+                        try:
+                            content = f.read().decode('utf-8', errors='ignore')
+                            c = parse_cookie_file(content)
+                            for idx, (blockname, cc) in enumerate(c):
+                                cookies.append((f"{safe_filename(info.filename)}_{idx}", cc))
+                        except:
+                            continue
+    except Exception as e:
+        log.error(f"Archive extraction error: {e}")
     return cookies
 
 def check_netflix_cookie(cookie_dict):
@@ -210,10 +217,23 @@ def check_netflix_cookie(cookie_dict):
     except:
         return {'ok': False, 'reason': 'Error'}
 
+# ----------------- ॲनिमेशन आणि लोडर -----------------
+BRAILLE_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+async def animate_progress(message, current, total):
+    percent = int((current / max(total, 1)) * 100)
+    filled = int(percent / 10)
+    bar = "█" * filled + "▒" * (10 - filled)
+    frame = BRAILLE_FRAMES[current % len(BRAILLE_FRAMES)]
+    try:
+        await message.text = f"{frame} <b>Processing Cookies...</b>\n\n[{bar}] {percent}%\n📊 Checked: {current}/{total}"
+    except:
+        pass
+
 # ----------------- टेलिग्राम हँडलर्स -----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    user_state[user_id] = {'mode': 'check', 'cookies': []}
+    user_state[user_id] = {'mode': 'check', 'cookies': [], 'pending_file': None}
     await update.message.reply_html(START_MSG, reply_markup=MAIN_MARKUP)
 
 async def mode_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -222,62 +242,98 @@ async def mode_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     modes = {"mode_check": "check", "mode_nftoken": "nftoken", "mode_clean": "clean", "mode_tvlogin": "tvlogin"}
     if query.data in modes:
         mode = modes[query.data]
-        user_state[user_id] = {'mode': mode, 'cookies': []}
-        await query.answer("Mode selected!")
+        user_state[user_id] = {'mode': mode, 'cookies': [], 'pending_file': None}
+        await query.answer("Mode selected successfully! ✨")
         if mode == "clean":
-            await context.bot.send_message(query.message.chat_id, "🧹 <b>Clean Cookies Mode</b>\n\nSend your messy <b>.txt</b> file to format and clean it!", parse_mode='HTML')
+            await context.bot.send_message(query.message.chat_id, "🧹 <b>Clean Cookies Mode Active!</b>\n\nSend your messy <b>.txt</b> or password-protected <b>.zip</b> file! 📂", parse_mode='HTML')
         else:
-            await context.bot.send_message(query.message.chat_id, f"✅ Mode: <b>{mode.upper()}</b>\n\nNow send your <b>.txt</b>, <b>.zip</b> or <b>.rar</b> file!", parse_mode='HTML')
+            await context.bot.send_message(query.message.chat_id, f"🔥 Mode Activated: <b>{mode.upper()}</b>\n\nNow send your <b>.txt</b>, <b>.zip</b> or <b>.rar</b> file! 📁", parse_mode='HTML')
 
 async def file_upload(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message.document:
         return
     user_id = update.effective_user.id
     if user_id not in user_state:
-        user_state[user_id] = {'mode': 'check', 'cookies': []}
+        user_state[user_id] = {'mode': 'check', 'cookies': [], 'pending_file': None}
         
-    mode = user_state[user_id].get('mode', 'check')
-    file = await update.message.document.get_file()
-    filename = update.message.document.file_name.lower()
+    doc = update.message.document
+    filename = doc.file_name.lower()
+    file = await doc.get_file()
     
-    with tempfile.TemporaryDirectory() as td:
-        tp = os.path.join(td, update.message.document.file_name)
-        await file.download_to_drive(tp)
+    td = tempfile.mkdtemp()
+    tp = os.path.join(td, doc.file_name)
+    await file.download_to_drive(tp)
+    
+    if filename.endswith('.zip'):
+        try:
+            with pyzipper.AESZipFile(tp) as z:
+                if z.encrypted:
+                    user_state[user_id]['pending_file'] = tp
+                    await update.message.reply_text("🔒 <b>Protected Archive Detected!</b>\n\n🔑 Please reply with the archive password:", parse_mode='HTML')
+                    return
+        except:
+            pass
+
+    await process_uploaded_file(update, context, tp, filename)
+
+async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in user_state or not user_state[user_id].get('pending_file'):
+        return
         
-        with open(tp, "r", encoding="utf-8", errors="ignore") as f:
-            content = f.read()
+    password = update.message.text.strip()
+    tp = user_state[user_id]['pending_file']
+    filename = os.path.basename(tp).lower()
+    
+    msg = await update.message.reply_text("🔄 <b>Decrypting and extracting archive...</b> ⏳", parse_mode='HTML')
+    await process_uploaded_file(update, context, tp, filename, password=password)
+    user_state[user_id]['pending_file'] = None
+    try:
+        await msg.delete()
+    except:
+        pass
 
-        # Clean Cookies लॉजिक (तुमच्या जुन्या कोडनुसार)
-        if mode == "clean":
-            matches = cookie_pattern.findall(content)
-            if matches:
-                formatted_lines = ["\t".join(match) for match in matches]
-                cleaned_content = "\n".join(formatted_lines) + "\n"
-                
-                buf = io.BytesIO(cleaned_content.encode("utf-8"))
-                buf.seek(0)
-                await update.message.reply_document(
-                    document=InputFile(buf, filename=f"cleaned_{update.message.document.file_name}"),
-                    caption=f"🧹 Cleaned: {update.message.document.file_name} ({len(matches)} cookies formatted)\n" + WATERMARK,
-                    parse_mode='HTML'
-                )
-            else:
-                await update.message.reply_text(f"❌ No matching Netscape cookies found to clean in this file!")
-            return
-
-        # इतर मोड्ससाठी
+async def process_uploaded_file(update: Update, context: ContextTypes.DEFAULT_TYPE, tp: str, filename: str, password: str = None):
+    user_id = update.effective_user.id
+    mode = user_state[user_id].get('mode', 'check')
+    
+    try:
         if filename.endswith('.zip') or filename.endswith('.rar'):
-            cookies = await extract_cookies_from_zip(tp)
+            cookies = await extract_cookies_from_archive(tp, password=password)
+            if not cookies and password:
+                await update.message.reply_text("❌ <b>Wrong Password or Empty Archive!</b> Please try again.", parse_mode='HTML')
+                return
         else:
+            with open(tp, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read()
+                
+            if mode == "clean":
+                matches = cookie_pattern.findall(content)
+                if matches:
+                    formatted_lines = ["\t".join(match) for match in matches]
+                    cleaned_content = "\n".join(formatted_lines) + "\n"
+                    buf = io.BytesIO(cleaned_content.encode("utf-8"))
+                    buf.seek(0)
+                    await update.message.reply_document(
+                        document=InputFile(buf, filename=f"cleaned_{filename}"),
+                        caption=f"✨ <b>Successfully Cleaned!</b>\n📁 File: {filename}\n🍪 Formatted Cookies: {len(matches)}\n\n{WATERMARK}",
+                        parse_mode='HTML'
+                    )
+                else:
+                    await update.message.reply_text(f"❌ <b>No matching Netscape cookies found!</b>", parse_mode='HTML')
+                return
+                
             parsed = parse_cookie_file(content)
             cookies = [(f"cookie_{i}", c) for i, (_, c) in enumerate(parsed)]
             
         if not cookies:
-            await update.message.reply_text("❌ No valid Netflix cookies found in the file!")
+            await update.message.reply_text("❌ <b>No valid Netflix cookies found!</b>", parse_mode='HTML')
             return
             
         user_state[user_id]['cookies'] = cookies
-        await update.message.reply_html(f"✅ Loaded <b>{len(cookies)}</b> cookies successfully!\n\nClick below to start processing.", reply_markup=CHECK_MARKUP)
+        await update.message.reply_html(f"🎉 <b>File Processed Successfully!</b>\n\n📦 Loaded Cookies: <b>{len(cookies)}</b> 🍪\n🔓 Password Unlocked & Cleaned!\n\n👇 Click below to begin checking:", reply_markup=CHECK_MARKUP)
+    except Exception as e:
+        await update.message.reply_text(f"❌ <b>Error:</b> {str(e)}", parse_mode='HTML')
 
 async def start_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -285,11 +341,11 @@ async def start_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cookies = user_state.get(user_id, {}).get('cookies', [])
     
     if not cookies:
-        await query.answer("No cookies loaded! Please upload a file first.")
+        await query.answer("No cookies loaded! Please upload a file first. ⚠️")
         return
         
-    await query.answer("Processing started...")
-    status_msg = await query.message.reply_text(f"⏳ Processing <b>{len(cookies)}</b> cookies...", parse_mode='HTML')
+    await query.answer("Checking started! 🚀")
+    status_msg = await query.message.reply_text("🔄 <b>Initializing high-speed checker...</b> ⚡", parse_mode='HTML')
     
     start_time = time.time()
     total = len(cookies)
@@ -307,7 +363,16 @@ async def start_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     valid_hits = []
     
-    for nm, ck in cookies:
+    for idx, (nm, ck) in enumerate(cookies, 1):
+        if idx % 3 == 0 or idx == total:
+            try:
+                frame = BRAILLE_FRAMES[idx % len(BRAILLE_FRAMES)]
+                percent = int((idx / total) * 100)
+                bar = "█" * (percent // 10) + "▒" * (10 - (percent // 10))
+                await status_msg.edit_text(f"{frame} <b>Checking in progress...</b>\n\n[{bar}] {percent}%\n📊 Progress: {idx}/{total}", parse_mode='HTML')
+            except:
+                pass
+                
         res = check_netflix_cookie(ck)
         if res.get('ok'):
             sub_found += 1
@@ -340,24 +405,24 @@ async def start_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_state[user_id]['valid_hits'] = valid_hits
     
     result_text = (
-        f"⏭️ Checking!\n\n"
-        f"💯 Total: {total}\n"
-        f"🏆 Subscription found: {sub_found}\n"
-        f"🆓 Free: {free}\n"
-        f"⏸ On Hold: {on_hold}\n"
-        f"💀 Dead: {dead}\n"
-        f"⚠️ Errors: {errors}\n"
-        f"⏱️ Average speed: {avg_speed} ms/cookie\n\n"
-        f"📹 Plan breakdown:\n\n"
-        f"👑 Premium (4K/UHD): {premium_4k}\n"
-        f"📺 Standard: {standard}\n"
-        f"📱 Basic: {basic}\n"
-        f"📲 Mobile: {mobile}\n"
-        f"🌐 Other: {other}\n\n"
-        f"⭐ Choose output format :-"
+        f"🎉 <b>CHECKING COMPLETED!</b> 🎉\n\n"
+        f"💯 Total Tested: <b>{total}</b>\n"
+        f"🏆 Subscription Found: <b>{sub_found}</b> 🔥\n"
+        f"🆓 Free Accounts: <b>{free}</b>\n"
+        f"⏸ On Hold: <b>{on_hold}</b>\n"
+        f"💀 Dead Cookies: <b>{dead}</b>\n"
+        f"⚠️ Errors: <b>{errors}</b>\n"
+        f"⏱️ Avg Speed: <b>{avg_speed} ms/cookie</b>\n\n"
+        f"📹 <b>Plan Breakdown:</b>\n"
+        f"👑 Premium (4K/UHD): <b>{premium_4k}</b>\n"
+        f"📺 Standard: <b>{standard}</b>\n"
+        f"📱 Basic: <b>{basic}</b>\n"
+        f"📲 Mobile: <b>{mobile}</b>\n"
+        f"🌐 Other: <b>{other}</b>\n\n"
+        f"⭐ <b>Choose output format below :-</b>"
     )
     
-    await status_msg.edit_text(result_text, reply_markup=RESULT_MARKUP)
+    await status_msg.edit_text(result_text, parse_mode='HTML', reply_markup=RESULT_MARKUP)
 
 async def send_result_txt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -365,7 +430,7 @@ async def send_result_txt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     hits = user_state.get(user_id, {}).get('valid_hits', [])
     
     if not hits:
-        await query.answer("No hits available!")
+        await query.answer("No hits available! ❌")
         return
         
     lines = []
@@ -376,8 +441,8 @@ async def send_result_txt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     buf = io.BytesIO(("\n".join(lines)).encode("utf-8"))
     buf.seek(0)
-    await context.bot.send_document(query.message.chat_id, document=InputFile(buf, filename="Netflix_Hits.txt"), caption=f"📄 Here is your .txt file!\n{WATERMARK}")
-    await query.answer("Sent txt!")
+    await context.bot.send_document(query.message.chat_id, document=InputFile(buf, filename="Netflix_Hits.txt"), caption=f"📄 <b>Here is your clean .txt file!</b> 🚀\n\n{WATERMARK}", parse_mode='HTML')
+    await query.answer("TXT file sent successfully! 📤")
 
 async def send_result_zip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -385,7 +450,7 @@ async def send_result_zip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     hits = user_state.get(user_id, {}).get('valid_hits', [])
     
     if not hits:
-        await query.answer("No hits available!")
+        await query.answer("No hits available! ❌")
         return
         
     zip_buf = io.BytesIO()
@@ -395,22 +460,22 @@ async def send_result_zip(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             p_lower = h.get('plan', '').lower()
             if 'ultra' in p_lower or '4k' in p_lower or 'premium' in p_lower:
-                folder = "Premium"
+                folder = "👑 Premium"
             elif 'standard' in p_lower:
-                folder = "Standard"
+                folder = "📺 Standard"
             elif 'basic' in p_lower:
-                folder = "Basic"
+                folder = "📱 Basic"
             elif 'mobile' in p_lower:
-                folder = "Mobile"
+                folder = "📲 Mobile"
             else:
-                folder = "Other"
+                folder = "🌐 Other"
                 
             file_path = f"{folder}/hit_{idx}_{h.get('country')}.txt"
             zf.writestr(file_path, netscape_content)
             
     zip_buf.seek(0)
-    await context.bot.send_document(query.message.chat_id, document=InputFile(zip_buf, filename="Netflix_Categorized_Hits.zip"), caption=f"📦 Here is your categorized .zip file (Premium, Standard, Basic, Mobile, Other folders)!\n{WATERMARK}")
-    await query.answer("Sent categorized zip!")
+    await context.bot.send_document(query.message.chat_id, document=InputFile(zip_buf, filename="Netflix_Categorized_Hits.zip"), caption=f"📦 <b>Here is your categorized .zip file!</b>\n(Folders: Premium, Standard, Basic, Mobile, Other) 📂\n\n{WATERMARK}", parse_mode='HTML')
+    await query.answer("Categorized ZIP sent successfully! 🚀")
 
 # ----------------- मुख्य कार्यान्वयन (Main) -----------------
 if __name__ == "__main__":
@@ -424,6 +489,7 @@ if __name__ == "__main__":
     app.add_handler(CallbackQueryHandler(send_result_txt, pattern="^result_txt$"))
     app.add_handler(CallbackQueryHandler(send_result_zip, pattern="^result_zip$"))
     app.add_handler(MessageHandler(filters.Document.ALL & ~filters.COMMAND, file_upload))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_password))
     
     threading.Thread(target=run_always_on_pinger, daemon=True).start()
     threading.Thread(target=run_http_server, daemon=True).start()

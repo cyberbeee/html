@@ -373,11 +373,26 @@ async def send_result_zip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
         for idx, h in enumerate(hits, 1):
             netscape_content = dict_to_netscape(h.get('cookie', {}))
-            zf.writestr(f"hit_{idx}_{h.get('country')}_{h.get('plan')}.txt", netscape_content)
+            
+            # प्लॅननुसार कॅटेगरी ठरवणे
+            p_lower = h.get('plan', '').lower()
+            if 'ultra' in p_lower or '4k' in p_lower or 'premium' in p_lower:
+                folder = "Premium"
+            elif 'standard' in p_lower:
+                folder = "Standard"
+            elif 'basic' in p_lower:
+                folder = "Basic"
+            elif 'mobile' in p_lower:
+                folder = "Mobile"
+            else:
+                folder = "Other"
+                
+            file_path = f"{folder}/hit_{idx}_{h.get('country')}.txt"
+            zf.writestr(file_path, netscape_content)
             
     zip_buf.seek(0)
-    await context.bot.send_document(query.message.chat_id, document=InputFile(zip_buf, filename="Netflix_Hits.zip"), caption=f"📦 Here is your .zip file containing all working cookies!\n{WATERMARK}")
-    await query.answer("Sent zip!")
+    await context.bot.send_document(query.message.chat_id, document=InputFile(zip_buf, filename="Netflix_Categorized_Hits.zip"), caption=f"📦 Here is your categorized .zip file (Premium, Standard, Basic, Mobile, Other folders)!\n{WATERMARK}")
+    await query.answer("Sent categorized zip!")
 
 # ----------------- मुख्य कार्यान्वयन (Main) -----------------
 if __name__ == "__main__":

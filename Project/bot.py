@@ -5,37 +5,47 @@ import tempfile
 import time
 import threading
 import requests
+import http.server
+import socketserver
 import telebot
-from flask import Flask
 
 # Render च्या Environment Variable मधून टोकन घेतले जाईल
 TOKEN = os.environ.get('BOT_TOKEN')
 bot = telebot.TeleBot(TOKEN)
 
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "Cookie Cleaner Bot is running 24x7!"
-
 # ----------------- अ‍ॅडमिन सेटिंग्ज -----------------
 # इथे तुमचा Telegram User ID टाका (फक्त तुम्हीच हा बॉट वापरू शकाल)
-ADMIN_IDS = [1115202962]  # <--- तुमचा खरा टेलिग्राम आयडी इथे टाका
+ADMIN_IDS = [123456789]  # <--- तुमचा खरा टेलिग्राम आयडी इथे टाका
 # --------------------------------------------------
 
-# 24x7 चालू ठेवण्यासाठी स्वतःलाच स्वयंचलित रिक्वेस्ट (Ping) पाठवणारे फंक्शन
-def self_ping():
-    # Render वरून तुमच्या अ‍ॅपचे नाव किंवा URL मिळवली जाईल (किंवा Render चे आतील लोहोस्ट)
-    port = int(os.environ.get("PORT", 5000))
-    url = f"http://127.0.0.1:{port}/"
+# तुम्ही सांगितलेला PingHandler (Render वर सर्व्हर चालू ठेवण्यासाठी)
+class PingHandler(http.server.SimpleHTTPRequestHandler):
+    def do_GET(self): 
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Server Active")
     
+    # अनावश्यक सर्व्हर लॉग्ज लपवण्यासाठी (पर्यायी)
+    def log_message(self, format, *args):
+        return
+
+# तुम्ही सांगितलेला always-on पिंगर
+def run_always_on_pinger():
+    time.sleep(20)
     while True:
         try:
-            time.sleep(300) # दर ५ मिनिटांनी (३०० सेकंद) रिक्वेस्ट जाईल
-            requests.get(url)
-            print("Self-ping sent to keep the bot alive!")
-        except Exception as e:
-            print(f"Ping error: {e}")
+            requests.get("https://checker-9kyv.onrender.com", timeout=12)
+            print("[*] 24x7 Active-Pulse Sent Successfully. Server Kept Awake.")
+        except: 
+            pass
+        time.sleep(540)
+
+# HTTP Server चालवण्यासाठी फंक्शन
+def run_http_server():
+    PORT = int(os.environ.get("PORT", 5000))
+    with socketserver.TCPServer(("", PORT), PingHandler) as httpd:
+        print(f"HTTP Server serving at port {PORT}")
+        httpd.serve_forever()
 
 cookie_pattern = re.compile(
     r'([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})\s+'
@@ -137,10 +147,10 @@ if __name__ == '__main__':
     t_bot = threading.Thread(target=run_bot)
     t_bot.start()
 
-    # २. स्वतःलाच पिंग करणारी सिस्टीम बॅकग्राउंडमध्ये चालू करा (24x7 साठी)
-    t_ping = threading.Thread(target=self_ping)
-    t_ping.start()
+    # २. तुमचे नेहमी चालू राहणारे पिंग फंक्शन बॅकग्राउंडमध्ये चालू करा
+    t_pinger = threading.Thread(target=run_always_on_pinger)
+    t_pinger.start()
 
-    # ३. मुख्य फ्लॅस्क सर्व्हर चालू ठेवा
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    # ३. मुख्य HTTP Server चालू करा (Render port requirement पूर्ण करण्यासाठी)
+    run_http_server()
+    

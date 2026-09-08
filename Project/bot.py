@@ -24,7 +24,7 @@ from telegram.ext import (
     filters, ContextTypes
 )
 from concurrent.futures import ThreadPoolExecutor
-from urllib3.exceptions::InsecureRequestWarning if False else object # dummy for warning
+from urllib3.exceptions import InsecureRequestWarning
 import urllib.parse
 
 # ----------------- कॉन्फिगरेशन -----------------
@@ -40,6 +40,8 @@ REQUEST_TIMEOUT = 20
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 
 ALL_COOKIE_NAMES = {"NetflixId", "SecureNetflixId", "nfvdid", "OptanonConsent", "flwssn", "memclid"}
+
+requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 
 user_locks = defaultdict(asyncio.Lock)
 user_state = {}
@@ -175,7 +177,7 @@ def check_netflix_cookie(cookie_dict):
     session.cookies.update(cookie_dict)
     headers = {'User-Agent': USER_AGENT, 'Accept': 'text/html,application/xhtml+xml'}
     try:
-        r = session.get('https://www.netflix.com/YourAccount', headers=headers, timeout=20, allow_redirects=True)
+        r = session.get('https://www.netflix.com/YourAccount', headers=headers, timeout=20, allow_redirects=True, verify=False)
         if r.status_code != 200 or 'login' in r.url.lower() or 'signin' in r.url.lower():
             return {'ok': False, 'reason': 'Dead'}
         

